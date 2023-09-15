@@ -31,8 +31,11 @@ pub async fn make_server() {
         },
         Err(AppError::Parse(_)) => panic!(),
     };
-    
-    let listener = TcpListener::bind("0.0.0.0:25565").unwrap();
+    println!("What port should the server be on?");
+    let port = utils::get_inp().unwrap();
+
+    let listener = TcpListener::bind("0.0.0.0:".to_string()+&port).unwrap();
+
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         handle_server_connection(stream, &key).await;
@@ -49,7 +52,7 @@ async fn handle_server_connection(mut stream: TcpStream, key: &KeyPair) {
     drop(buf);
     let cl_pubkey: u64 = cl_pubkey.trim().parse().unwrap();
     let shared_key = dh::gen_common_key(key.modulus, key.private, cl_pubkey);
-    println!("shared key established.");
+    println!("Shared key established.");
 
     let skey_ref = Arc::new(shared_key);
 
@@ -76,7 +79,7 @@ pub async fn client_mode() {
     let key_str = key.public.to_string()+"\n";
     stream.write_all(key_str.as_bytes()).unwrap();
     let shared_key = crypt::dh::gen_common_key(key.modulus, key.private, key_details[0]);
-    println!("got the shared key");
+    println!("Shared key established.");
 
     let skey_ref = Arc::new(shared_key);
 
@@ -86,8 +89,6 @@ pub async fn client_mode() {
         receive_msg(&mut stream, &key_c).await;
     });
     send_msg(&mut stream_cp, &skey_ref).await;
-
-
 }
 
 async fn receive_msg(stream: &mut TcpStream, shared_key: &[u8]) {
