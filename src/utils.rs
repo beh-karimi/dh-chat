@@ -1,5 +1,8 @@
+use tokio::sync::{oneshot, mpsc};
+
 use crate::crypt::{dh::KeyPair, self};
 use std::{fs,io::{self, Write}};
+use crate::INPUT_TX;
 
 #[derive(Debug)]
 pub enum AppError {
@@ -18,11 +21,41 @@ impl From<std::num::ParseIntError> for AppError {
     }
 }
 
-pub fn get_inp() -> Result<String, AppError> {
-    let mut inp = String::new();
-    io::stdin().read_line(&mut inp)?;
-    inp = inp.trim().into();
-    Ok(inp)
+async fn input_handler(mut rx: mpsc::Receiver<oneshot::Sender<String>>) {
+    let mut repeat = false;
+    let mut s = String::new();
+    loop {
+        let tx = match rx.recv().await {
+            Some(t) => t,
+            None => break,
+        };
+
+        if !repeat {
+            s = String::new();
+            io::stdin().read_line(&mut s).unwrap();
+            s = s.trim().into();
+        }
+        repeat = false;
+        let s_copy = s.clone();
+        match tx.send(s_copy) {
+            Ok(_) => {},
+            Err(_) => repeat = true,
+        };
+    }
+}
+
+pub async fn get_inp() -> String {
+    let handler_tx = INPUT_TX.get_or_init(|| async {
+        let (tx, rx) = mpsc::channel(20);
+        tokio::spawn( async move {
+            input_handler(rx).await;
+        });
+        tx
+    }).await;
+
+    let (tx, rx) = oneshot::channel::<String>();
+    handler_tx.send(tx).await.unwrap();
+    rx.await.unwrap()
 }
 
 pub fn read_key(path: &str) -> Result<KeyPair, AppError> {
@@ -46,14 +79,14 @@ pub fn save_key(path: &str, key: &KeyPair) -> Result<(), AppError>{
     Ok(())
 }
 
-pub fn customize_and_generate_key() -> KeyPair {
+pub async fn customize_and_generate_key() -> KeyPair {
     println!("What prime modulus do you want to use? (leave blank for 2315981)");
-    let mod_s = get_inp().unwrap();
+    let mod_s = get_inp().await;
     let mut modulus = 2315981;
     if mod_s != "" { modulus = mod_s.parse().unwrap(); }
 
     println!("What generator do you want to use? (leave blank for 772197)");
-    let gen_s = get_inp().unwrap();
+    let gen_s = get_inp().await;
     let mut generator = 772197;
     if gen_s != "" { generator = gen_s.parse().unwrap(); }
 
