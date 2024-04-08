@@ -21,6 +21,12 @@ impl From<std::num::ParseIntError> for AppError {
     }
 }
 
+pub async fn print() -> Result<(), AppError> {
+    
+    
+    Ok(())
+}
+
 async fn input_handler(mut rx: mpsc::Receiver<oneshot::Sender<String>>) {
     let mut repeat = false;
     let mut s = String::new();

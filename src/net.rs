@@ -7,12 +7,13 @@ use std::{
 };
 use tokio::{
     select,
-    sync:: watch,
+    sync::{watch, mpsc},
 };
 use crate::{
     utils::{self, AppError, get_inp},
     crypt::dh::{KeyPair, self},
     crypt::{self, decrypt, encrypt},
+    tui::{self, UiAction},
 };
 
 pub async fn make_server() {
@@ -51,7 +52,14 @@ pub async fn client_mode() {
         let shared_key = crypt::dh::gen_common_key(key.modulus, key.private, key_details[0]);
         println!("Shared key established.");
 
-        communicate(stream, shared_key).await;
+        let mut ui = tui::Ui::new();
+        let atx = ui.action_tx.clone();
+        tokio::spawn(async move {
+            communicate(stream, shared_key, atx).await;
+        });
+        let mut screen = std::io::stdout();
+        ui.run(&mut screen).await.unwrap();
+
         println!("Disconnected from the server. Enter a new one (ctrl+c to exit):");
     }
 }
@@ -111,10 +119,17 @@ async fn handle_server_connection(mut stream: TcpStream, key: &KeyPair) {
     let cl_pubkey: u64 = cl_pubkey.trim().parse().unwrap();
     let shared_key = dh::gen_common_key(key.modulus, key.private, cl_pubkey);
     println!("Shared key established.");
-    communicate(stream, shared_key).await;
+
+    let mut ui = tui::Ui::new();
+    let atx = ui.action_tx.clone();
+    tokio::spawn(async move {
+        communicate(stream, shared_key, atx).await;
+    });
+    let mut screen = std::io::stdout();
+    ui.run(&mut screen).await.unwrap();
 }
 
-async fn communicate(mut stream: TcpStream, shared_key: Vec<u8>) {
+async fn communicate(mut stream: TcpStream, shared_key: Vec<u8>, action_tx: mpsc::Sender<UiAction>) {
     let skey_ref = Arc::new(shared_key);
 
     let mut stream_cp = stream.try_clone().unwrap();
